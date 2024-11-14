@@ -1,0 +1,218 @@
+---
+_schema-version: 3.3.0
+ID: incident-management
+version: 1.0.0
+description: "A simple CAP project."
+# parameters:
+#   enable-parallel-deployments: true
+#   deploy_mode: html5-repo
+build-parameters:
+  before-all:
+    - builder: custom
+      commands:
+        - npm ci
+        - npx cds build --production
+modules:
+  - name: incident-management-srv
+    type: nodejs
+    path: gen/srv
+    parameters:
+      buildpack: nodejs_buildpack
+      readiness-health-check-type: http
+      readiness-health-check-http-endpoint: /health
+    build-parameters:
+      builder: npm
+    provides:
+      - name: srv-api # required by consumers of CAP services (e.g. approuter)
+        properties:
+          srv-url: ${default-url}
+    requires:
+      - name: incident-management-db
+      - name: incident-management-auth
+      - name: incident-management-destination
+      - name: incident-management-logging
+
+  # Destination deployer module - create CDM DT destination ##########
+  - name: incident-management-destination-content
+    type: com.sap.application.content
+    requires:
+      - name: incident-management-destination
+        parameters:
+          content-target: true
+      - name: incident-management-html5-repo-runtime
+        parameters:
+          service-key:
+            name: incident-managementcdm-html5-app-runtime-key
+      - name: incident-management-auth
+        parameters:
+          service-key:
+            name: incident-management-uaa-key
+    parameters:
+      content:
+        subaccount:
+          destinations:
+            - Name: incident-managementcdm_cdm
+              ServiceInstanceName: ${space}-incident-management-html5-repo-runtime
+              ServiceKeyName: incident-managementcdm-html5-app-runtime-key
+              URL: https://html5-apps-repo-rt.cfapps.eu10.hana.ondemand.com/applications/cdm/incident-management # replace with dynamic URL
+
+          existing_destinations_policy: update
+    build-parameters:
+      no-source: true
+  #######################################################################
+
+  - name: incident-management-app-deployer
+    type: com.sap.application.content
+    path: gen
+    requires:
+      - name: incident-management-auth
+      - name: srv-api
+      - name: incident-management-html5-repo-host
+        parameters:
+          content-target: true
+    build-parameters:
+      build-result: app/
+      requires:
+        - name: incidentmanagementincidents
+          artifacts:
+            - incidents.zip
+          target-path: app/
+    parameters:
+      config:
+        destinations:
+          - name: northwind
+            url: https://services.odata.org
+          - name: ui5
+            url: https://ui5.sap.com
+          - name: incident-management-srv-api
+            URL: ~{srv-api/srv-url}
+            Authentication: NoAuthentication
+            Type: HTTP
+            ProxyType: Internet
+            HTML5.ForwardAuthToken: true
+            HTML5.DynamicDestination: true
+
+  - name: incidentmanagementincidents
+    type: html5
+    path: app/incidents
+    build-parameters:
+      build-result: dist
+      builder: custom
+      commands:
+        - npm ci
+        - npm run build
+      supported-platforms:
+        []
+
+  - name: incident-management-mtx
+    type: nodejs
+    path: gen/mtx/sidecar
+    build-parameters:
+      builder: npm-ci
+    parameters:
+      memory: 256M
+      disk-quota: 512M
+    provides:
+      - name: mtx-api
+        properties:
+          mtx-url: ${default-url}
+    requires:
+      - name: incident-management-auth
+      - name: incident-management-registry
+      - name: incident-management-destination
+      - name: incident-management-db
+      - name: incident-management-html5-repo-host
+      - name: incident-management-logging
+
+resources:
+  - name: incident-management-db
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: service-manager
+      service-plan: container
+  - name: incident-management-html5-repo-host
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: html5-apps-repo
+      service-plan: app-host
+  - name: incident-management-html5-repo-runtime
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: html5-apps-repo
+      service-name: ${space}-incident-management-html5-repo-runtime
+      service-plan: app-runtime
+  - name: incident-management-registry
+    type: org.cloudfoundry.managed-service
+    requires:
+      - name: mtx-api
+    parameters:
+      service: saas-registry
+      service-plan: application
+      config:
+        xsappname: incident-management-${org}-${space}
+        appName: incident-management-${org}-${space}
+        displayName: incident-management
+        description: A simple CAP project.
+        category: "Category"
+        appUrls:
+          getDependencies: ~{mtx-api/mtx-url}/-/cds/saas-provisioning/dependencies
+          onSubscription: ~{mtx-api/mtx-url}/-/cds/saas-provisioning/tenant/{tenantId}
+          onSubscriptionAsync: true
+          onUnSubscriptionAsync: true
+          onUpdateDependenciesAsync: true
+          callbackTimeoutMillis: 300000 # Increase if your deployments are taking longer than that
+  - name: incident-management-auth
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: xsuaa
+      service-plan: application
+      path: ./xs-security.json
+      config:
+        xsappname: incident-management-${org}-${space}
+        tenant-mode: shared
+  - name: incident-management-destination
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: destination
+      service-plan: lite
+      config:
+        HTML5Runtime_enabled: true
+        init_data:
+          instance:
+            existing_destinations_policy: update
+            destinations:
+              - Name: incident-management-srv-api
+                URL: ~{srv-api/srv-url}
+                Authentication: NoAuthentication
+                Type: HTTP
+                ProxyType: Internet
+                HTML5.ForwardAuthToken: true
+                HTML5.DynamicDestination: true
+              - Name: ui5
+                URL: https://ui5.sap.com
+                Authentication: NoAuthentication
+                Type: HTTP
+                ProxyType: Internet
+      # config:
+      #   HTML5Runtime_enabled: true
+      #   init_data:
+      #     instance:
+      #       existing_destinations_policy: update
+      #       destinations:
+      #         - Name: incident-management-srv-api
+      #           URL: ~{srv-api/srv-url}
+      #           Authentication: NoAuthentication
+      #           Type: HTTP
+      #           ProxyType: Internet
+      #           HTML5.ForwardAuthToken: true
+      #           HTML5.DynamicDestination: true
+      #         - Name: ui5
+      #           URL: https://ui5.sap.com
+      #           Authentication: NoAuthentication
+      #           Type: HTTP
+      #           ProxyType: Internet
+  - name: incident-management-logging
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: application-logs
+      service-plan: standard
