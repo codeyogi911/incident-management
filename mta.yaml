@@ -101,8 +101,7 @@ modules:
       commands:
         - npm ci
         - npm run build
-      supported-platforms:
-        []
+      supported-platforms: []
 
   - name: incident-management-mtx
     type: nodejs
@@ -175,44 +174,10 @@ resources:
     parameters:
       service: destination
       service-plan: lite
-      config:
-        HTML5Runtime_enabled: true
-        init_data:
-          instance:
-            existing_destinations_policy: update
-            destinations:
-              - Name: incident-management-srv-api
-                URL: ~{srv-api/srv-url}
-                Authentication: NoAuthentication
-                Type: HTTP
-                ProxyType: Internet
-                HTML5.ForwardAuthToken: true
-                HTML5.DynamicDestination: true
-              - Name: ui5
-                URL: https://ui5.sap.com
-                Authentication: NoAuthentication
-                Type: HTTP
-                ProxyType: Internet
-      # config:
-      #   HTML5Runtime_enabled: true
-      #   init_data:
-      #     instance:
-      #       existing_destinations_policy: update
-      #       destinations:
-      #         - Name: incident-management-srv-api
-      #           URL: ~{srv-api/srv-url}
-      #           Authentication: NoAuthentication
-      #           Type: HTTP
-      #           ProxyType: Internet
-      #           HTML5.ForwardAuthToken: true
-      #           HTML5.DynamicDestination: true
-      #         - Name: ui5
-      #           URL: https://ui5.sap.com
-      #           Authentication: NoAuthentication
-      #           Type: HTTP
-      #           ProxyType: Internet
+
   - name: incident-management-logging
     type: org.cloudfoundry.managed-service
     parameters:
       service: application-logs
-      service-plan: standard
+      service-name: ${space}-incident-management-logging
+      service-plan: lite

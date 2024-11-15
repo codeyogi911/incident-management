@@ -25,9 +25,7 @@
         "subscriptionDependency": {
           "uaa": "xsappname"
         }
-      },
-      "html5-repo": true,
-      "destinations": true
+      }
     }
   }
 }
